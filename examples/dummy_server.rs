@@ -1,14 +1,13 @@
 use anyhow::Result;
 use async_prost::AsyncProstStream;
 use futures::prelude::*;
-use kv_server::{CommandRequest, CommandResponse, MemTable, Service};
+use kv_server::{CommandRequest, CommandResponse};
 use tokio::net::TcpListener;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let service: Service = Service::new(MemTable::new());
     let addr = "127.0.0.1:9527";
     let listener = TcpListener::bind(addr).await?;
     info!("Server listening on {}", addr);
@@ -16,15 +15,18 @@ async fn main() -> Result<()> {
     loop {
         let (stream, addr) = listener.accept().await?;
         info!("Client {:?} connected", addr);
-        let svc = service.clone();
         tokio::spawn(async move {
             let mut stream =
                 AsyncProstStream::<_, CommandRequest, CommandResponse, _>::from(stream).for_async();
-            while let Some(Ok(cmd)) = stream.next().await {
-                info!("Got a new command: {:?}", cmd);
+            while let Some(Ok(msg)) = stream.next().await {
+                info!("Got a new command: {:?}", msg);
                 // 创建一个404 response 返回给客户端
-                let res = svc.execute(cmd);
-                stream.send(res).await.unwrap();
+                let resp = CommandResponse {
+                    status: 404,
+                    message: "Not Found".to_string(),
+                    ..Default::default()
+                };
+                stream.send(resp).await.unwrap();
             }
             info!("Client {:?} disconnected", addr);
         });
